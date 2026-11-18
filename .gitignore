@@ -1,1 +1,5 @@
 AGENTS.local.md
+.venv/
+__pycache__/
+demos/data/
+demos/out/
