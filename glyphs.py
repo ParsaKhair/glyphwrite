@@ -5,12 +5,18 @@ from scipy import ndimage
 from scipy.signal import find_peaks
 
 from corpus import Glyph
-from lines import best_shear, frame_bbox
+from lines import best_shear, frame_bbox, relevel
 
 # Body hangs below the baseline; anchored by its x-height top instead of its bottom
 DESCENDERS = set("gjpqyγημρςχ")
 # Both ascend and descend; anchored by their centre
 ASC_DESC = set("βζξφψ")
+# Nothing above the x-height or below the baseline, so their tops mark the x-height
+CORE = set("acemnorsuvwxzαεικνοσυω")
+# A line's frame is refit only from at least this many baseline points and x-height points
+MIN_FIT_POINTS = 4
+# Steeper fitted baselines (dy per dx) are taken as bad fits, e.g. 2 written lines merged into 1
+MAX_SLOPE = 0.12
 NARROW = set("il1.,:;'!|ιı")
 SEMI = set("fjrtIJ")
 WIDE = set("mwMWωψΩΨΦφ")
@@ -216,3 +222,62 @@ def split_glyphs(line, seg):
 def split_corpus(corpus):
     for seg in corpus.segments.values():
         corpus.glyphs.update((g.id, g) for g in split_glyphs(corpus.lines[seg.line_id], seg))
+
+
+# Straight line y = base + slope * x through points, refit 3 times without outliers (descender tails,
+# ascender tops). Returns (slope, base).
+def _robust_line(x, y):
+    keep = np.ones(len(x), bool)
+    for _ in range(3):
+        slope, base = np.polyfit(x[keep], y[keep], 1)
+        r = y - (base + slope * x)
+        keep = np.abs(r) <= 2.5 * np.median(np.abs(r[keep])) + 1
+        if keep.sum() < 2:
+            break
+    return float(slope), float(base)
+
+
+# Refits a line's baseline and x-height from its glyphs' letters, which say where each should touch: every
+# letter and digit outside DESCENDERS/ASC_DESC sits on the baseline, every CORE letter and descender body
+# reaches the x-height. Takes the line and its glyphs; returns (slope, base row at col 0, x-height px) or None.
+def fit_frame(line, glyphs):
+    bx, by, tx, ty = [], [], [], []
+    for g in glyphs:
+        win = window(line, g.bbox)
+        rows, cols = np.nonzero(glyph_mask(line, g, win))
+        rows, cols = rows + win[0], cols + win[2]
+        w = line.density[rows, cols]
+        x, c = float(np.average(cols, weights=w)), g.char[0]
+        if c.isalnum() and c not in DESCENDERS and c not in ASC_DESC:
+            bx.append(x)
+            by.append(_wquantile(rows, w, 0.97))
+        if c in CORE or c in DESCENDERS:
+            # Body = largest component, so an i-dot or a joining stroke's neighbour can't set the top
+            lab = line.labels[rows, cols]
+            body = lab == np.bincount(lab).argmax()
+            tx.append(x)
+            ty.append(_wquantile(rows[body], w[body], 0.03))
+    if len(bx) < MIN_FIT_POINTS or len(tx) < MIN_FIT_POINTS:
+        return None
+    slope, base = _robust_line(np.array(bx), np.array(by))
+    # Short lines can't pin a slope; flat is safer than a wild tilt
+    if np.ptp(bx) < 4 * line.xheight_px or abs(slope) > MAX_SLOPE:
+        slope, base = 0.0, float(np.median(by))
+    xheight = float(np.median(base + slope * np.array(tx) - np.array(ty)))
+    return (slope, base, xheight) if xheight > 0 else None
+
+
+# Refits every line's frame from a 1st glyph split, then clears the segments and glyphs, which were measured in
+# the old frame; run words.split_corpus and split_corpus again afterwards. Returns the ids of lines refit.
+def refit_frames(corpus):
+    by_line = {}
+    for g in corpus.glyphs.values():
+        by_line.setdefault(g.line_id, []).append(g)
+    refit = []
+    for line_id, glyphs in by_line.items():
+        fit = fit_frame(corpus.lines[line_id], glyphs)
+        if fit:
+            relevel(corpus.lines[line_id], *fit)
+            refit.append(line_id)
+    corpus.segments, corpus.glyphs = {}, {}
+    return refit

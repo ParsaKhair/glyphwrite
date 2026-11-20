@@ -190,6 +190,28 @@ def build_line(density, labels, band, back, offset, page, line_id, order):
                 xheight_px=xheight_px, base_row=base_row, shear=shear, density=dens, labels=lab)
 
 
+# Moves a line onto a refit baseline row = base + slope * col with the given x-height: shears its pixels
+# vertically so that baseline becomes horizontal, then remeasures slant and the baseline's page position.
+def relevel(line, slope, base, xheight_px):
+    # Pads above (rising baseline) or below (falling) so no ink leaves the canvas
+    h, w = line.density.shape
+    off = max(0.0, slope * (w - 1))
+    size = (h + int(np.ceil(abs(slope) * (w - 1))), w)
+    m, o = [[1, slope], [0, 1]], [-off, 0]
+    line.density = ndimage.affine_transform(line.density, m, offset=o, output_shape=size, order=1)
+    line.labels = ndimage.affine_transform(line.labels, m, offset=o, output_shape=size, order=0)
+
+    # Slides the page baseline's ends along the line's downward normal by how far each end moved
+    p = line.baseline_poly
+    u = (p[1] - p[0]) / np.linalg.norm(p[1] - p[0])
+    shift = np.array([base - line.base_row, base + slope * w - line.base_row])
+    line.baseline_poly = p + shift[:, None] * np.array([-u[1], u[0]])
+
+    line.base_row, line.xheight_px = base + off, xheight_px
+    rows, cols = np.nonzero(line.labels)
+    line.shear = best_shear(cols.astype(float), line.base_row - rows, line.density[rows, cols])
+
+
 # Turns 1 lasso crop into straightened text lines at full source resolution, top to bottom.
 # Takes the crop, its page name, a region index (for IDs) and the crop's (left, top) on the page;
 # returns Lines with no segments yet, or [] for a blank crop.
