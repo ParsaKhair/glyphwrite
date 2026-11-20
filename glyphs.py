@@ -5,8 +5,8 @@ from scipy import ndimage
 from scipy.signal import find_peaks
 
 from corpus import Glyph
+from lines import best_shear
 
-SLANTS = np.tan(np.radians(np.arange(-45, 45.1, 1.0)))
 # Body hangs below the baseline; anchored by its x-height top instead of its bottom
 DESCENDERS = set("gjpqyγημρςχ")
 # Both ascend and descend; anchored by their centre
@@ -74,14 +74,6 @@ def glyph_alpha(line, glyph):
     return a, (win[0], win[2])
 
 
-# Shear s that makes the histogram of u - v*s most peaked (strokes lined up).
-def _best_shear(u, v, w):
-    def peakiness(s):
-        p = u - v * s
-        return np.square(np.bincount((p - p.min()).astype(int), w)).sum()
-    return float(max(SLANTS, key=peakiness))
-
-
 # Weighted quantile q of values v with weights w.
 def _wquantile(v, w, q):
     i = np.argsort(v)
@@ -97,7 +89,7 @@ def _bbox(line, gy, gx):
 
 # Measures 1 glyph's pixels. Returns slant (degrees, + leans right) and dy (anchor offset from baseline).
 def _measure(line, ch, gy, gx, w):
-    slant = float(np.degrees(np.arctan(_best_shear(gx.astype(float), line.base_row - gy, w))))
+    slant = float(np.degrees(np.arctan(best_shear(gx.astype(float), line.base_row - gy, w))))
     y = (line.base_row - gy) / line.xheight_px
     # Main body = largest component, so dots/accents don't shift the anchor
     lab = line.labels[gy, gx]
@@ -113,25 +105,25 @@ def _measure(line, ch, gy, gx, w):
     return slant, dy
 
 
-# Splits 1 OCR'd segment into glyphs, 1 per character of its text.
-# Takes line + segment, returns the glyphs (empty if the split fails) and fills the segment's split fields.
+# Cuts 1 OCR'd word into glyphs, 1 per character of its text, by fitting vertical cuts to its ink.
+# Takes line + segment, returns the glyphs ([] if no good fit) and records split stats on the segment.
 def split_glyphs(line, seg):
+    # Gathers the word's ink pixels and the pixel window around them
     s, chars = line.xheight_px, graphemes(seg.text)
     ry, rx = np.nonzero(np.isin(line.labels, seg.comp_ids))
     win = (ry.min(), ry.max() + 1, rx.min(), rx.max() + 1)
 
-    # Ink per column in slant-corrected x, normalized so a typical stroke column is ~1
+    # Cost of cutting at each column = ink the cut would slice, measured with the slant undone (~1 = 1 stroke)
     xs = rx - (line.base_row - ry) * line.shear
     off = np.floor(xs.min())
     proj = ndimage.gaussian_filter1d(np.bincount((xs - off).astype(int), line.density[ry, rx]), max(1.0, 0.06 * s))
     cost = proj / np.percentile(proj[proj > 0], 75)
 
-    # Candidate cuts: local ink minima (blank columns, thin cursive joins), kept when
-    # thin enough and not hugging the segment ends
+    # Candidate cuts = cheapest columns locally (gaps, thin joins), dropping thick ink and the word's edges
     cand, _ = find_peaks(-cost, distance=max(2, int(0.15 * s)))
     cand = cand[(cost[cand] < 0.6) & (cand > 0.15 * s) & (cand < len(cost) - 0.15 * s)]
 
-    # Glyph count the ink implies without the text; matches when it equals the char count
+    # OCR-free check: counts pieces the ink breaks into on its own and compares to the letter count
     seg.n_natural = 1 + int((cost[cand] < 0.15).sum())
     seg.count_match = seg.n_natural == len(chars)
     seg.split_ok, seg.glyph_ids = False, []
@@ -141,12 +133,14 @@ def split_glyphs(line, seg):
         seg.split_score = 0.0
         return []
 
-    # Picks n-1 cuts by DP: D[k, i] = best cost of k glyphs ending at P[i].
-    # Cost = cut thickness + width vs the char's expected width + blank columns skipped
+    # Lists cut positions P (word edges included), their cost C, and a running count of blank gaps
     P = np.r_[0, cand, len(cost)].astype(float)
     C = np.r_[0, cost[cand], 0]
     gaps = np.cumsum(np.r_[False, cost[cand] < 0.02, False])
     m = len(P)
+
+    # DP over cuts: D[k, i] = cheapest way to fit the first k letters ending at cut i.
+    # Each letter pays for a thick cut, a width far from its expected width, and each blank gap it spans
     D = np.full((n + 1, m), np.inf)
     D[0, 0] = 0
     back = np.zeros((n + 1, m), int)
@@ -157,21 +151,22 @@ def split_glyphs(line, seg):
             tot = D[k - 1, j] + C[i] + np.log((P[i] - P[j]) / ew) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
             back[k, i] = int(np.argmin(tot))
             D[k, i] = tot[back[k, i]]
+
+    # Turns the best fit's average cost per letter into a 0-1 score
     total = D[n, m - 1]
     seg.split_score = float(np.exp(-total / n)) if np.isfinite(total) else 0.0
-    # Fails when there are too few candidate cuts, or the best split is too costly
+    # Fails when there are fewer candidate cuts than letters need, or the best fit is too costly
     if not np.isfinite(total) or total / n > MAX_SPLIT_COST:
         return []
 
-    # Walks the DP back to get each glyph's start/end position
+    # Traces the chosen cuts back from the right edge, giving each glyph's left/right bound in unslanted x
     ends = [m - 1]
     for k in range(n, 0, -1):
         ends.append(back[k, ends[-1]])
     ends = ends[::-1]
     bounds = P[ends] + off
 
-    # Assigns components: shared (clipped by cuts) when large and crossing a cut,
-    # otherwise owned whole by the glyph holding their centre
+    # Gives each ink blob to the glyph holding its centre; big blobs crossing a cut (joined letters) are shared instead
     lab = line.labels[ry, rx]
     comps = np.unique(lab)
     area = ndimage.sum(np.ones_like(xs), lab, comps)
@@ -180,7 +175,7 @@ def split_glyphs(line, seg):
     crosses = np.searchsorted(bounds, lo, side="right") != np.searchsorted(bounds, hi, side="right")
     shared = (area >= 0.3 * s * s) & crosses
 
-    # Builds each glyph, then measures its bbox, slant, dy and split score from its mask
+    # Builds 1 glyph per letter from its owned blobs plus its slice of the shared ones
     glyphs = []
     for g, ch in enumerate(chars):
         a, b = bounds[g], bounds[g + 1]
@@ -193,9 +188,13 @@ def split_glyphs(line, seg):
         # Fails when a glyph ends up with no ink
         if len(gy) == 0:
             return []
+
+        # Measures bbox, slant and baseline offset from the glyph's own pixels
         gy, gx = gy + win[0], gx + win[2]
         glyph.bbox = _bbox(line, gy, gx)
         glyph.slant, glyph.dy = _measure(line, ch, gy, gx, line.density[gy, gx])
+
+        # Scores this letter's share of the DP cost, splitting each bounding cut's cost with its neighbour
         j, i = ends[g], ends[g + 1]
         gcost = (C[j] + C[i]) / 2 + np.log((P[i] - P[j]) / (char_width(ch) * s)) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
         glyph.split_score = float(np.exp(-gcost))

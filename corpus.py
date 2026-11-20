@@ -16,6 +16,7 @@ class Line:
     segment_ids: list[str]
     # Original baseline in source pixels, to re-add drift
     baseline_poly: np.ndarray
+    # Left and right edge of the line in source pixels
     x_span: tuple[float, float]
     # Px per x-height at stored resolution, to rescale for display
     xheight_px: float
