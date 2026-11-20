@@ -5,7 +5,7 @@ from scipy import ndimage
 from scipy.signal import find_peaks
 
 from corpus import Glyph
-from lines import best_shear
+from lines import best_shear, frame_bbox
 
 # Body hangs below the baseline; anchored by its x-height top instead of its bottom
 DESCENDERS = set("gjpqyγημρςχ")
@@ -31,7 +31,7 @@ def graphemes(text):
     return out
 
 
-# Expected width of 1 char in x-heights. Rough prior; only steers where cuts go.
+# Relative width of 1 char (roughly x-heights in a typical hand). Only its proportion to other chars steers cuts.
 def char_width(ch):
     c = ch[0]
     # Returns the width of the first class the char belongs to
@@ -81,10 +81,26 @@ def _wquantile(v, w, q):
     return float(v[i][min(np.searchsorted(c, q * c[-1]), len(v) - 1)])
 
 
-# Frame-unit bbox of pixel coords (gy, gx).
-def _bbox(line, gy, gx):
-    s = line.xheight_px
-    return (gx.min() / s, (line.base_row - gy.max()) / s, gx.max() / s, (line.base_row - gy.min()) / s)
+# Splits m units in a row into n consecutive pieces at the lowest total cost, by DP over piece ends.
+# cost(k, j, i) gives the cost of piece k (from 0) covering units j..i-1, for an array of starts j.
+# Returns (total, bounds): piece k covers units bounds[k]..bounds[k+1]-1; total is inf when nothing fits.
+def partition(n, m, cost):
+    # D[k, i] = cheapest way to cover the first i units with k pieces; back[k, i] = where piece k starts
+    D = np.full((n + 1, m + 1), np.inf)
+    D[0, 0] = 0
+    back = np.zeros((n + 1, m + 1), int)
+    for k in range(1, n + 1):
+        for i in range(1, m + 1):
+            j = np.arange(i)
+            tot = D[k - 1, j] + cost(k - 1, j, i)
+            back[k, i] = int(np.argmin(tot))
+            D[k, i] = tot[back[k, i]]
+
+    # Traces the chosen piece starts back from the last unit
+    bounds = [m]
+    for k in range(n, 0, -1):
+        bounds.append(back[k, bounds[-1]])
+    return float(D[n, m]), bounds[::-1]
 
 
 # Measures 1 glyph's pixels. Returns slant (degrees, + leans right) and dy (anchor offset from baseline).
@@ -139,31 +155,23 @@ def split_glyphs(line, seg):
     gaps = np.cumsum(np.r_[False, cost[cand] < 0.02, False])
     m = len(P)
 
-    # DP over cuts: D[k, i] = cheapest way to fit the first k letters ending at cut i.
-    # Each letter pays for a thick cut, a width far from its expected width, and each blank gap it spans
-    D = np.full((n + 1, m), np.inf)
-    D[0, 0] = 0
-    back = np.zeros((n + 1, m), int)
-    for k in range(1, n + 1):
-        ew = char_width(chars[k - 1]) * s
-        for i in range(1, m):
-            j = np.arange(i)
-            tot = D[k - 1, j] + C[i] + np.log((P[i] - P[j]) / ew) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
-            back[k, i] = int(np.argmin(tot))
-            D[k, i] = tot[back[k, i]]
+    # Expected letter widths from char_width, scaled so the letters span the word; only proportions matter,
+    # since letter width relative to x-height varies a lot between writers
+    unit = len(cost) / sum(char_width(ch) for ch in chars)
+    expected = [char_width(ch) * unit for ch in chars]
 
-    # Turns the best fit's average cost per letter into a 0-1 score
-    total = D[n, m - 1]
+    # Each letter pays for a thick cut at its right end, a width far from its expected width, and each blank gap it spans
+    def letter_cost(k, j, i):
+        return C[i] + np.log((P[i] - P[j]) / expected[k]) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
+
+    # Picks n-1 of the candidate cuts, then turns the average cost per letter into a 0-1 score
+    total, ends = partition(n, m - 1, letter_cost)
     seg.split_score = float(np.exp(-total / n)) if np.isfinite(total) else 0.0
     # Fails when there are fewer candidate cuts than letters need, or the best fit is too costly
     if not np.isfinite(total) or total / n > MAX_SPLIT_COST:
         return []
 
-    # Traces the chosen cuts back from the right edge, giving each glyph's left/right bound in unslanted x
-    ends = [m - 1]
-    for k in range(n, 0, -1):
-        ends.append(back[k, ends[-1]])
-    ends = ends[::-1]
+    # Converts the chosen cuts to each glyph's left/right bound in unslanted x
     bounds = P[ends] + off
 
     # Gives each ink blob to the glyph holding its centre; big blobs crossing a cut (joined letters) are shared instead
@@ -191,12 +199,12 @@ def split_glyphs(line, seg):
 
         # Measures bbox, slant and baseline offset from the glyph's own pixels
         gy, gx = gy + win[0], gx + win[2]
-        glyph.bbox = _bbox(line, gy, gx)
+        glyph.bbox = frame_bbox(line, gy, gx)
         glyph.slant, glyph.dy = _measure(line, ch, gy, gx, line.density[gy, gx])
 
         # Scores this letter's share of the DP cost, splitting each bounding cut's cost with its neighbour
         j, i = ends[g], ends[g + 1]
-        gcost = (C[j] + C[i]) / 2 + np.log((P[i] - P[j]) / (char_width(ch) * s)) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
+        gcost = (C[j] + C[i]) / 2 + np.log((P[i] - P[j]) / expected[g]) ** 2 + GAP_SKIP * (gaps[i - 1] - gaps[j])
         glyph.split_score = float(np.exp(-gcost))
         glyphs.append(glyph)
     seg.split_ok = True

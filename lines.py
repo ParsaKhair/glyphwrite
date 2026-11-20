@@ -155,6 +155,13 @@ def best_shear(u, v, w):
     return float(max(SLANTS, key=peakiness))
 
 
+# Bbox of some of a line's pixels in frame units (x-heights, y up from the baseline).
+# Takes the line and pixel rows + cols, returns (x0, y0, x1, y1).
+def frame_bbox(line, rows, cols):
+    s = line.xheight_px
+    return (cols.min() / s, (line.base_row - rows.max()) / s, cols.max() / s, (line.base_row - rows.min()) / s)
+
+
 # Builds 1 Line from a band of rows in the straightened region.
 # Takes the region's density + labels, the band, the rotation map, the crop's (left, top) on the page,
 # and the line's page, id and order; returns the Line.

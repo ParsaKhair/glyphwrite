@@ -27,6 +27,11 @@ class Line:
     density: np.ndarray = field(repr=False)
     # Component ID per pixel, 0 = background
     labels: np.ndarray = field(repr=False)
+    # OCR of the whole line, words separated by single spaces
+    text: str = ""
+    ocr_conf: float = np.nan
+    # 1 OCR confidence per word of text
+    word_confs: list[float] = field(default_factory=list)
 
 
 # Run of text with no spaces; alpha = density x (labels in comp_ids).
