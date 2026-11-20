@@ -191,7 +191,7 @@ def split_glyphs(line, seg):
                       comp_ids=comps[~shared & (home == g)].tolist(),
                       cut_ids=comps[shared & (lo < b) & (hi >= a)].tolist(),
                       cut=(float(a / s), float(b / s)), bbox=(0, 0, 0, 0), slant=0.0, dy=0.0,
-                      ocr_conf=seg.ocr_conf)
+                      label_source=seg.label_source, ocr_conf=seg.ocr_conf)
         gy, gx = np.nonzero(glyph_mask(line, glyph, win))
         # Fails when a glyph ends up with no ink
         if len(gy) == 0:

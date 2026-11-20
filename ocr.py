@@ -70,9 +70,44 @@ def read_lines(corpus, recognize):
     lines = list(corpus.lines.values())
     for line, (_, conf, pieces) in zip(lines, recognize([line_image(line) for line in lines])):
         words = ocr_words(pieces)
-        line.text = " ".join(word for word, _ in words)
+        line.text = line.ocr_text = " ".join(word for word, _ in words)
+        line.label_source = "ocr"
         line.ocr_conf = float(conf)
         line.word_confs = [c for _, c in words]
+
+
+# Fewest single-char insertions, deletions and substitutions turning a into b.
+def edit_distance(a, b):
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
+# Labels 1 region's lines (already OCR'd, top to bottom) with its true text, lines joined by spaces.
+# The words are spread over the lines in order; OCR only steers where each line's words start and end
+# (fewest edits between the words and what OCR read there), so speck lines OCR read as "0" get no words.
+def apply_truth(lines, truth):
+    words = truth.split()
+    n, m = len(lines), len(words)
+    cost = lambda i, k, j: edit_distance(lines[i].ocr_text.lower(), " ".join(words[k:j]).lower())
+    # D[i, j] = fewest edits labelling the first i lines with the first j words; back[i, j] = where line i's words start
+    D = np.full((n + 1, m + 1), np.inf)
+    D[0, 0] = 0
+    back = np.zeros((n + 1, m + 1), int)
+    for i in range(1, n + 1):
+        for j in range(m + 1):
+            totals = [D[i - 1, k] + cost(i - 1, k, j) for k in range(j + 1)]
+            back[i, j] = int(np.argmin(totals))
+            D[i, j] = totals[back[i, j]]
+    j = m
+    for i in range(n, 0, -1):
+        k = back[i, j]
+        line = lines[i - 1]
+        line.text, line.label_source, line.word_confs = " ".join(words[k:j]), "truth", [np.nan] * (j - k)
+        j = k
 
 
 # Renders 1 segment as dark ink on white for OCR. Takes its line + segment, returns a PIL image.

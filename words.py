@@ -93,7 +93,8 @@ def split_words(line):
         comps = sorted(b for g in groups[bounds[k]:bounds[k + 1]] for b in g[2])
         rows, cols = np.nonzero(np.isin(line.labels, comps))
         conf = line.word_confs[k] if k < len(line.word_confs) else line.ocr_conf
-        segs.append(Segment(f"{line.id}_w{k}", line.id, k, comps, frame_bbox(line, rows, cols), text=word, ocr_conf=conf))
+        segs.append(Segment(f"{line.id}_w{k}", line.id, k, comps, frame_bbox(line, rows, cols), text=word,
+                            label_source=line.label_source, ocr_conf=conf))
     line.segment_ids = [seg.id for seg in segs]
     return segs
 

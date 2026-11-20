@@ -27,8 +27,12 @@ class Line:
     density: np.ndarray = field(repr=False)
     # Component ID per pixel, 0 = background
     labels: np.ndarray = field(repr=False)
-    # OCR of the whole line, words separated by single spaces
+    # Label of the whole line, words separated by single spaces
     text: str = ""
+    # "truth" (given transcription) or "ocr"
+    label_source: str = "ocr"
+    # What OCR read, kept when the label comes from the truth
+    ocr_text: str = ""
     ocr_conf: float = np.nan
     # 1 OCR confidence per word of text
     word_confs: list[float] = field(default_factory=list)
@@ -45,6 +49,8 @@ class Segment:
     # Empty if the split failed
     glyph_ids: list[str] = field(default_factory=list)
     text: str = ""
+    label_source: str = "ocr"
+    # NaN when the label comes from the truth
     ocr_conf: float = np.nan
     n_natural: int = 0
     count_match: bool = False
@@ -72,6 +78,7 @@ class Glyph:
     slant: float
     # Offset from baseline; measured, not corrected
     dy: float
+    label_source: str = "ocr"
     ocr_conf: float = np.nan
     split_score: float = 0.0
     consistency: float = np.nan
