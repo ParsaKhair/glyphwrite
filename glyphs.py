@@ -23,6 +23,14 @@ WIDE = set("mwMWωψΩΨΦφ")
 # Merging across a blank column is allowed (pen lifts inside 1 letter) but penalized
 GAP_SKIP = 2.0
 MAX_SPLIT_COST = 1.5
+# A glyph whose anchor sits further than this (x-heights) from where its letter belongs is flagged: in a sample
+# of these, most were wrong ink (a crossbar alone, a connector, a neighbour's stroke attached)
+MAX_DY = 0.5
+
+
+# Whether a glyph's measured baseline offset is plausible; flagged glyphs are skipped by compose when it can.
+def offset_ok(glyph):
+    return abs(glyph.dy) <= MAX_DY
 
 
 # Splits text into characters as a reader sees them: NFC, accents kept with their base (ά, ῶ).
@@ -116,8 +124,9 @@ def _measure(line, ch, gy, gx, w):
     # Main body = largest component, so dots/accents don't shift the anchor
     lab = line.labels[gy, gx]
     body = lab == np.bincount(lab).argmax()
-    # Anchors on the body top when the char descends, the body centre when it ascends
-    # and descends, and the ink bottom otherwise
+    # Anchors on the body top when the char descends, the body centre when it ascends and descends, and the ink
+    # bottom otherwise. Column medians and quantiles of column bottoms were tried and flagged as many glyphs or more:
+    # large offsets mostly come from wrong ink (fragments, merged letters), which offset_ok flags instead
     if ch[0] in DESCENDERS:
         dy = _wquantile(y[body], w[body], 0.97) - 1
     elif ch[0] in ASC_DESC:

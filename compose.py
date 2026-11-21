@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-from glyphs import ASC_DESC, DESCENDERS, char_width, glyph_alpha, glyph_mask, graphemes, window
+from glyphs import ASC_DESC, DESCENDERS, char_width, glyph_alpha, glyph_mask, graphemes, offset_ok, window
 
 # Gaps in x-heights, used only when the corpus has no neighbouring letters or words to measure
 LETTER_GAP = 0.1
@@ -27,13 +27,15 @@ class Placement:
     scale: float = 1.0
 
 
-# Picks 1 random sample per character. Takes the corpus, text and optional seed; returns per word [(char, glyph id or None)].
+# Picks 1 random sample per character, skipping glyphs with an implausible baseline offset unless a char has
+# nothing else. Takes the corpus, text and optional seed; returns per word [(char, glyph id or None)].
 def choose(corpus, text, seed=None):
     rng = np.random.default_rng(seed)
-    samples = {}
+    good, flagged = {}, {}
     # Sorted so a seed always picks the same glyphs from the same corpus
     for g in sorted(corpus.glyphs.values(), key=lambda g: g.id):
-        samples.setdefault(g.char, []).append(g.id)
+        (good if offset_ok(g) else flagged).setdefault(g.char, []).append(g.id)
+    samples = {**flagged, **good}
     pick = lambda ch: samples[ch][rng.integers(len(samples[ch]))] if ch in samples else None
     return [[(ch, pick(ch)) for ch in graphemes(word)] for word in text.split()]
 
