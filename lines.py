@@ -18,6 +18,10 @@ MIN_BLOB = 3
 ROW_GAP = 0.35
 # Rows holding at least this fraction of the busiest row's ink count as the core
 CORE = 0.5
+# A blob smoother than this fraction of its region's median blob is a shadow, not ink
+SHADOW_SMOOTH = 0.65
+# A blob the lasso edge cuts is kept when at least this fraction of it lies in a text line of uncut blobs
+CLIPPED_KEEP = 0.5
 
 
 # Lighting-corrected darkness of a lasso crop: 0 = paper, 1 = black.
@@ -90,10 +94,39 @@ def skew_angle(mask, max_skew=15):
     return best(np.linspace(max(-max_skew, angle - 1), min(max_skew, angle + 1), 21))
 
 
+# Which blobs are errant marks rather than the region's writing. Takes darkness, labels 1..n and the lasso's
+# inside mask; returns a bool per blob id 1..n, True = errant.
+def errant_blobs(dark, labels, inside):
+    n = int(labels.max())
+    ids = np.arange(1, n + 1)
+    size = np.bincount(labels.ravel(), minlength=n + 1)[1:]
+
+    # Shadows: pen strokes have sharp edges while shadows ramp over many pixels. Mean gradient per darkness
+    # also falls as strokes thicken, so each blob is judged against its own region's median
+    sharp = ndimage.mean(np.hypot(*np.gradient(dark)), labels, ids) / ndimage.mean(dark, labels, ids)
+    ref = sharp[size > 30]
+    errant = sharp < SHADOW_SMOOTH * np.median(ref) if len(ref) >= 3 else np.zeros(n, bool)
+
+    # Clipped marks: pieces of the lines above and below that the lasso edge cuts through. Text lines are found
+    # from uncut blobs only; a cut blob stays when it lies mostly inside one, as letters touching a tight lasso do
+    cut = np.zeros(n + 1, bool)
+    cut[labels[ndimage.binary_dilation(~inside, iterations=2) & (labels > 0)]] = True
+    cut = cut[1:] & ~errant
+    uncut = ~cut & ~errant
+    if cut.any() and uncut.any():
+        rows = np.zeros(labels.shape[0], bool)
+        for top, bottom in line_bands(np.where(np.r_[False, uncut][labels], labels, 0)):
+            rows[top:bottom] = True
+        in_line = ndimage.mean(np.broadcast_to(rows[:, None], labels.shape), labels, ids)
+        errant |= cut & (in_line < CLIPPED_KEEP)
+    return errant
+
+
 # Groups ink into blobs (connected components) with a soft edge: a blob is a patch darker than
 # EDGE x threshold that somewhere passes the full threshold, so faint stroke edges stay attached.
-# Takes darkness + threshold, returns (density 0-1 with paper zeroed, labels 1..n with 0 = paper).
-def ink_blobs(dark, threshold):
+# Takes darkness, threshold and optionally the lasso's inside mask (to drop errant marks);
+# returns (density 0-1 with paper zeroed, labels 1..n with 0 = paper).
+def ink_blobs(dark, threshold, inside=None):
     # Labels every patch darker than the edge level, counting diagonal neighbours as touching
     labels, n = ndimage.label(dark > EDGE * threshold, structure=np.ones((3, 3)))
 
@@ -103,6 +136,10 @@ def ink_blobs(dark, threshold):
     size = np.bincount(labels.ravel(), minlength=n + 1)[1:]
     keep = np.r_[False, (peak > threshold) & (size >= MIN_BLOB)]
     labels = (np.cumsum(keep) * keep)[labels]
+    # Drops shadows and clipped marks before ink is normalized, so they can't skew it
+    if inside is not None and labels.any():
+        keep = np.r_[False, ~errant_blobs(dark, labels, inside)]
+        labels = (np.cumsum(keep) * keep)[labels]
 
     # Returns empty when nothing qualifies as ink
     if not labels.any():
@@ -221,8 +258,11 @@ def extract_lines(crop, page, region, offset, max_skew=15):
     threshold = ink_threshold(dark)
 
     # Straightens the region, then groups its ink into blobs
-    rotated, back = rotate(dark, skew_angle(dark > threshold, max_skew))
-    density, labels = ink_blobs(rotated, threshold)
+    angle = skew_angle(dark > threshold, max_skew)
+    rotated, back = rotate(dark, angle)
+    # Rotated canvas corners are outside the lasso too, so the inside mask is rotated rather than the outside
+    inside = rotate((np.asarray(crop.convert("RGBA"))[..., 3] > 0).astype(float), angle, order=0)[0] > 0.5
+    density, labels = ink_blobs(rotated, threshold, inside)
     # Returns nothing when the crop holds no ink
     if not labels.any():
         return []
