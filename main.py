@@ -1,3 +1,6 @@
+# Entry point. Loads page photos and lets the user lasso each text region.
+# Takes image paths; returns the cropped regions (RGBA, outside = transparent) with their page offsets.
+
 import math
 import tkinter as tk
 

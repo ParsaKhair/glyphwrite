@@ -1,3 +1,6 @@
+# Stage 2: reads text with TrOCR.
+# OCRs whole lines and single segments, or labels lines with a region's known true text instead.
+
 import numpy as np
 import torch
 from PIL import Image

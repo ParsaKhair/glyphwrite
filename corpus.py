@@ -1,3 +1,6 @@
+# Data model shared by every stage: Lines own the pixels, Segments are words on a line,
+# Glyphs are characters within a Segment. Corpus holds all 3 as id -> object tables.
+
 from dataclasses import dataclass, field
 
 import numpy as np

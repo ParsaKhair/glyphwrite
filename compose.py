@@ -1,3 +1,7 @@
+# Stage 5: text -> handwritten image.
+# Picks a corpus glyph per char, places them with measured letter and word gaps, optionally rescales
+# them to a typical size, and rasterizes the result. choose, place and scale are swappable.
+
 from dataclasses import dataclass
 from typing import Optional
 

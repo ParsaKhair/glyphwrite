@@ -1,3 +1,6 @@
+# Stage 3: line -> word Segments.
+# Groups a labelled line's ink into clusters and picks the word breaks that best match the expected word widths.
+
 import numpy as np
 from scipy import ndimage
 

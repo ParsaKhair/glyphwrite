@@ -3,3 +3,6 @@ AGENTS.local.md
 __pycache__/
 demos/data/
 demos/out/
+demos/ideas/
+demos/history.md
+demos/demo.env

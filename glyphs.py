@@ -1,3 +1,7 @@
+# Stage 4: word Segment -> character Glyphs.
+# Cuts each segment at the breaks that best fit expected char widths, measures each glyph's slant and
+# baseline offset, and refits line frames from the labelled glyphs. Also holds char classes and widths.
+
 import unicodedata
 
 import numpy as np

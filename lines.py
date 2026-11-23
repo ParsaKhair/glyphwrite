@@ -1,3 +1,7 @@
+# Stage 1: region crop -> straightened text lines.
+# Finds ink, drops shadows and errant marks, deskews, cuts the region into line bands,
+# and fits each line's baseline, x-height and slant. Returns Lines with no segments yet.
+
 import math
 
 import numpy as np
