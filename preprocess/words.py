@@ -5,8 +5,8 @@ import numpy as np
 from scipy import ndimage
 
 from corpus import Segment
-from glyphs import char_width, graphemes, partition
-from lines import frame_bbox
+from preprocess.glyphs import char_width, graphemes, partition
+from preprocess.lines import frame_bbox
 
 # Cost per x-height of blank space left inside a word; makes the widest gaps the preferred word breaks
 GAP_WEIGHT = 2.0

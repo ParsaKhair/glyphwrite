@@ -9,7 +9,7 @@ from scipy import ndimage
 from scipy.signal import find_peaks
 
 from corpus import Glyph
-from lines import best_shear, frame_bbox, relevel
+from preprocess.lines import best_shear, frame_bbox, relevel
 
 # Body hangs below the baseline; anchored by its x-height top instead of its bottom
 DESCENDERS = set("gjpqyγημρςχ")

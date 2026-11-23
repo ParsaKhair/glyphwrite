@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-from glyphs import ASC_DESC, DESCENDERS, char_width, glyph_alpha, glyph_mask, graphemes, offset_ok, window
+from preprocess.glyphs import ASC_DESC, DESCENDERS, char_width, glyph_alpha, glyph_mask, graphemes, offset_ok, window
 
 # Gaps in x-heights, used only when the corpus has no neighbouring letters or words to measure
 LETTER_GAP = 0.1
