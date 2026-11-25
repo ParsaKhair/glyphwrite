@@ -36,5 +36,12 @@ is skipped when a newer commit has already replaced it. Rebases don't trigger ru
 - `report.py`: builds `figure.tex` from a run's `results.json`, `commit.txt` and the previous run's
   results, and logs to `history.md`. Rebuilding a run's report doesn't log it twice:
   `python3 demos/report.py demos/out/runs/<run>`, then `latexmk -pdf figure.tex` in that folder.
+- `pretrain_demo.py`: pretrains the letter classifier in `writing/quality.py` on EMNIST (kept in
+  `data/emnist`, downloaded there if missing) and writes `classifier.pt` and `results.json` (losses, test accuracy).
+  Not part of the automatic demo. On biglab: `python demos/pretrain_demo.py demos/out/pretrain [epochs]`.
+- `classifier_report.py`: LaTeX writeup of the pretrained classifier and u(g): data, PCA of E(g), accuracy, and how
+  well u(g) separates hand-curated good and bad glyphs (`data/glyph_labels.json`, untracked).
+  `compute demos/out/classifier` on biglab, copy back `data.npz`, then
+  `python3 demos/classifier_report.py report demos/out/classifier` locally for `classifier.pdf`.
 - `samples.py`: extra lassos (keyed by true text) used only as glyph sources for compose.
 - `ideas/` (untracked): experiments and ideas for later, 1 folder each; see `ideas/README.md`.
