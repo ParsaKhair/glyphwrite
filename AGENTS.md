@@ -14,6 +14,7 @@
   - `generation/`: future system that generates new glyphs; create it when its 1st module is written.
 - Import across folders by package path from the repo root (`from preprocess.lines import ...`, `from writing.compose import ...`); run from the root.
 - Demos and tests go in `demos/` and are tracked. Their data (`demos/data/`), outputs (`demos/out/`), notes (`demos/ideas/`), run log (`demos/history.md`) and host config (`demos/demo.env`) stay untracked.
+- Ignore `demos/ideas/` (don't read, cite or build on it) unless the prompt explicitly asks for it.
 
 ## Comments
 - Start each function, class, or code block with a short high-level comment: what it does, input, output.
