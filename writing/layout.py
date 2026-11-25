@@ -5,8 +5,8 @@ from torch import nn
 
 
 # Predicts the gap and vertical offset of b relative to a as a Gaussian, so compose can sample natural variation.
-# Takes [B, dim] features of a and of b (e.g. GlyphEncoder embeddings); returns (mu, log sigma), each [B, 2] for
-# (gap, dy) in x-heights. Log sigma so sigma stays positive.
+# Takes [B, dim] features of a and of b (e.g. quality.GlyphEncoder embeddings); returns (mu, log sigma), each [B, 2]
+# for (gap, dy) in x-heights. Log sigma so sigma stays positive.
 class LayoutModel(nn.Module):
     def __init__(self, dim=128, hidden=128):
         super().__init__()
