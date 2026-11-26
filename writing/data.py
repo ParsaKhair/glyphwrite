@@ -29,17 +29,19 @@ def fit_square(ink):
         return torch.from_numpy(out)[None]
 
     # Crops to the ink's bounding box
-    ink = ink[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+    ink = ink[rows[0] : rows[-1] + 1, cols[0] : cols[-1] + 1]
 
     # Scales the longer side to SIZE - 4
     h, w = ink.shape
     fit = (SIZE - 4) / max(h, w)
     new_h, new_w = max(1, round(h * fit)), max(1, round(w * fit))
-    img = Image.fromarray(ink.astype(np.float32), mode="F").resize((new_w, new_h), Image.BILINEAR)
+    img = Image.fromarray(ink.astype(np.float32), mode="F").resize(
+        (new_w, new_h), Image.BILINEAR
+    )
 
     # Pastes it centred
     top, left = (SIZE - new_h) // 2, (SIZE - new_w) // 2
-    out[top:top + new_h, left:left + new_w] = np.clip(np.asarray(img), 0, 1)
+    out[top : top + new_h, left : left + new_w] = np.clip(np.asarray(img), 0, 1)
     return torch.from_numpy(out)[None]
 
 
@@ -54,8 +56,7 @@ def glyph_tensor(corpus, glyph_id):
 # The left or right edge of 1 glyph in its line frame (baseline and x-height fixed, slant undone) at EDGE_PX per
 # x-height, so where a stroke leaves 1 letter and enters the next keeps its height. Takes the corpus, a glyph id and
 # side "left" or "right"; returns a [1, H, W] tensor.
-def edge_tensor(corpus, glyph_id, side):
-    ...
+def edge_tensor(corpus, glyph_id, side): ...
 
 
 # EMNIST "byclass" images and labels for pretraining, reframed by fit_square to match glyph_tensor. Its 62 class
@@ -63,7 +64,9 @@ def edge_tensor(corpus, glyph_id, side):
 # download folder and whether to load the train or test split; returns a dataset of ([1, SIZE, SIZE] tensor, class
 # index).
 def emnist(root, train=True):
-    return EMNIST(root, split="byclass", train=train, download=True, transform=emnist_image)
+    return EMNIST(
+        root, split="byclass", train=train, download=True, transform=emnist_image
+    )
 
 
 # 1 EMNIST image as fit_square framed ink. EMNIST stores images transposed, so it is flipped back first. Module level so
@@ -95,16 +98,16 @@ def glyph_dataset(corpus, charset, ocr=False, keep=None):
 
     # Empty tensors of the right shape when nothing qualifies
     if not images:
-        return TensorDataset(torch.zeros(0, 1, SIZE, SIZE), torch.zeros(0, dtype=torch.long))
+        return TensorDataset(
+            torch.zeros(0, 1, SIZE, SIZE), torch.zeros(0, dtype=torch.long)
+        )
     return TensorDataset(torch.stack(images), torch.tensor(labels))
 
 
 # Neighbouring glyphs within each segment, the positives for pair.py. Takes the corpus; returns [(a id, b id)].
-def neighbour_pairs(corpus):
-    ...
+def neighbour_pairs(corpus): ...
 
 
 # Measured layout of each neighbour pair, the targets for layout.py: core-band gap (as compose.core_extent) and b's
 # baseline offset minus a's, both in x-heights. Takes the corpus; returns [(a id, b id, gap, dy)].
-def layout_targets(corpus):
-    ...
+def layout_targets(corpus): ...
